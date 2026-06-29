@@ -1,43 +1,43 @@
-# Lightweight Mindmap Requirement
+# 轻量导图需求规格
 
-## Background
+## 背景
 
-Users frequently create right-oriented mind maps in MindManager, but MindManager is heavier than needed for simple diagrams. This feature provides a lightweight Windows desktop app focused on fixed right-oriented tree mind maps.
+用户经常使用 MindManager 绘制右侧导图，但 MindManager 对基础导图场景来说过重。本功能提供一个轻量级 Windows 桌面应用，专注固定右向树导图的创建、编辑、保存和重新打开。
 
-## Goals
+## 目标
 
-- Provide a Windows desktop mind map application.
-- Support fixed right-oriented tree layout with the root topic on the left and all branches expanding to the right.
-- Support node creation, editing, deletion, drag-based structure changes, collapse/expand, notes, local save, and local open.
-- Store documents as JSON files.
+- 提供 Windows 桌面导图应用。
+- 支持固定右向树布局：根主题在左侧，所有分支向右展开。
+- 支持节点创建、编辑、删除、拖拽调整结构、折叠/展开、备注、本地保存和本地打开。
+- 使用 JSON 文件保存导图数据。
 
-## In Scope
+## 范围内
 
-- Tauri + React + TypeScript desktop application.
-- Keyboard operations: `Enter` for sibling node, `Tab` for child node, `Delete` for removing a selected non-root node.
-- Node text editing through double click or direct typing.
-- Dragging nodes to reorder siblings or move under another parent.
-- Collapse and expand per branch.
-- Plain text notes per node.
-- Canvas panning and zooming.
-- JSON save, save-as, open, and new document flows.
-- Unsaved-change prompts before destructive document actions.
+- Tauri + React + TypeScript 桌面应用。
+- 键盘操作：`Enter` 新建同级节点，`Tab` 新建子节点，`Delete` 删除选中的非根节点。
+- 通过双击或直接输入编辑节点文本。
+- 拖拽节点调整同级顺序，或移动到其他父节点下。
+- 每个分支支持折叠和展开。
+- 每个节点支持纯文本备注。
+- 画布支持平移和缩放。
+- 支持 JSON 保存、另存为、打开和新建导图流程。
+- 在会丢失未保存更改的文档操作前提示用户。
 
-## Out of Scope
+## 范围外
 
-- Freeform canvas positioning.
-- Image, SVG, Markdown, or other export formats.
-- Cloud sync, collaboration, user accounts, or multi-tab editing.
-- Themes, icons, attachments, rich-text notes, or plugin support.
-- macOS or Linux packaging.
-- SQL schema, migrations, or initialization scripts.
+- 自由画布定位。
+- 图片、SVG、Markdown 或其他格式导出。
+- 云同步、多人协作、用户账号或多标签编辑。
+- 主题、图标、附件、富文本备注或插件支持。
+- macOS 或 Linux 打包。
+- SQL 表结构、迁移脚本或初始化脚本。
 
-## Acceptance Criteria
+## 验收标准
 
-- The app can run as a Windows desktop app when Tauri prerequisites are installed.
-- Users can create, rename, delete, and drag nodes in a fixed right-oriented tree.
-- Users can collapse and expand branches.
-- Users can edit plain text notes for selected nodes.
-- Users can save a mind map to JSON and open it again.
-- Reopened files restore node text, hierarchy, notes, collapse state, and viewport.
-- Invalid JSON, unsupported versions, read failures, write failures, and unsaved-close flows show clear user-facing messages.
+- 安装 Tauri 依赖后，应用可以作为 Windows 桌面应用运行。
+- 用户可以在固定右向树中创建、重命名、删除和拖拽节点。
+- 用户可以折叠和展开分支。
+- 用户可以为选中节点编辑纯文本备注。
+- 用户可以将导图保存为 JSON 并重新打开。
+- 重新打开文件后可以恢复节点文本、层级结构、备注、折叠状态和视图位置。
+- 无效 JSON、不支持的版本、读取失败、写入失败和未保存关闭流程都有清晰的用户提示。

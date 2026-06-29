@@ -1,22 +1,22 @@
-# Lightweight Mindmap Implementation
+# 轻量导图实施方案
 
-## Module Boundary
+## 模块边界
 
-This feature introduces a new desktop app in the repository. It does not modify existing business modules because the repository is currently a new project.
+本功能在仓库中引入一个新的桌面应用。当前仓库是新项目，因此不会修改既有业务模块。
 
-## Implementation Steps
+## 实施步骤
 
-1. Create a Tauri + React + TypeScript project scaffold.
-2. Add shared mind map document types and validation helpers.
-3. Implement pure tree operations for create, delete, move, text update, note update, and collapse toggling.
-4. Implement right-oriented tree layout from the current visible tree.
-5. Build the React UI: toolbar, canvas, node rendering, and notes panel.
-6. Wire keyboard shortcuts and drag interactions.
-7. Wire Tauri file open, save, save-as, and close-before-save flows.
-8. Add focused unit tests for tree operations and document validation.
-9. Update `docs/decisions/AI_CHANGELOG.md` with the implementation summary.
+1. 创建 Tauri + React + TypeScript 项目骨架。
+2. 添加共享的导图文档类型和校验工具。
+3. 实现纯函数树操作，包括创建、删除、移动、文本更新、备注更新和折叠切换。
+4. 基于当前可见树计算右向树布局。
+5. 构建 React UI，包括工具栏、画布、节点渲染和备注面板。
+6. 接入键盘快捷键和拖拽交互。
+7. 接入 Tauri 文件打开、保存、另存为和关闭前未保存提示流程。
+8. 为树操作和文档校验补充聚焦单元测试。
+9. 在 `docs/decisions/AI_CHANGELOG.md` 中记录实施摘要。
 
-## Files To Add
+## 新增文件范围
 
 - `package.json`
 - `index.html`
@@ -26,18 +26,18 @@ This feature introduces a new desktop app in the repository. It does not modify 
 - `src-tauri/**`
 - `docs/decisions/AI_CHANGELOG.md`
 
-## Implementation Constraints
+## 实施约束
 
-- Keep tree mutations in pure functions rather than React components.
-- Do not save layout coordinates in JSON; compute layout from tree structure and collapse state.
-- Keep notes as plain text.
-- Keep first-version file format at `version: 1`.
-- Do not introduce SQL or backend services.
-- Do not add export formats in this iteration.
+- 树结构变更应放在纯函数中，不直接散落在 React 组件里。
+- JSON 中不保存布局坐标；布局从树结构和折叠状态实时计算。
+- 备注保持纯文本。
+- 第一版文件格式固定为 `version: 1`。
+- 不引入 SQL 或后端服务。
+- 本轮不新增任何导出格式。
 
-## Validation Plan
+## 验证计划
 
-- Run TypeScript type check.
-- Run unit tests for tree operations and validation.
-- If Rust/Tauri toolchain is installed, run Tauri build or dev validation.
-- Manually verify Windows desktop behavior after Rust/Tauri prerequisites are available.
+- 运行 TypeScript 类型检查。
+- 运行树操作和文档校验单元测试。
+- 如果已安装 Rust/Tauri 工具链，运行 Tauri 构建或开发模式验证。
+- Rust/Tauri 依赖可用后，在 Windows 桌面环境手动验证应用行为。

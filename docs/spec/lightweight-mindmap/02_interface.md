@@ -1,8 +1,8 @@
-# Lightweight Mindmap Interface
+# 轻量导图接口契约
 
-## Document Format
+## 文档格式
 
-Mind map files are JSON documents with versioned structure.
+导图文件是带版本号的 JSON 文档。
 
 ```json
 {
@@ -22,7 +22,7 @@ Mind map files are JSON documents with versioned structure.
 }
 ```
 
-## TypeScript Contracts
+## TypeScript 契约
 
 ```ts
 type MindMapNode = {
@@ -44,34 +44,34 @@ type MindMapDocument = {
 };
 ```
 
-## File Operations
+## 文件操作
 
-- `newDocument()`: creates a default in-memory document.
-- `openDocument()`: opens a JSON file through Tauri dialog and validates the document shape.
-- `saveDocument()`: writes to the current file path; if no path exists, delegates to save-as.
-- `saveDocumentAs()`: asks for a path and writes the current JSON document.
+- `newDocument()`：创建默认内存文档。
+- `openDocument()`：通过 Tauri 文件对话框打开 JSON 文件，并校验文档结构。
+- `saveDocument()`：写入当前文件路径；如果当前没有文件路径，则转为另存为。
+- `saveDocumentAs()`：请求用户选择保存路径，并写入当前 JSON 文档。
 
-## Validation Rules
+## 校验规则
 
-- `version` must be `1`.
-- `root` must be a valid node.
-- Node `id` and `text` must be strings.
-- Node `note` must be a string.
-- Node `collapsed` must be boolean.
-- Node `children` must be an array of valid nodes.
-- `viewport.x`, `viewport.y`, and `viewport.zoom` must be finite numbers.
+- `version` 必须是 `1`。
+- `root` 必须是合法节点。
+- 节点 `id` 和 `text` 必须是字符串。
+- 节点 `note` 必须是字符串。
+- 节点 `collapsed` 必须是布尔值。
+- 节点 `children` 必须是合法节点数组。
+- `viewport.x`、`viewport.y` 和 `viewport.zoom` 必须是有限数字。
 
-## Error Codes
+## 错误码
 
-The UI maps internal errors to user-facing messages.
+UI 将内部错误映射为用户可理解的提示。
 
-- `INVALID_JSON`: selected file is not parseable JSON.
-- `UNSUPPORTED_VERSION`: document version is not supported by this app.
-- `INVALID_DOCUMENT`: JSON shape is not a valid mind map document.
-- `READ_FAILED`: file cannot be read.
-- `WRITE_FAILED`: file cannot be written.
-- `INVALID_MOVE`: requested drag operation would create an invalid tree.
+- `INVALID_JSON`：所选文件不是可解析的 JSON。
+- `UNSUPPORTED_VERSION`：当前应用不支持该文档版本。
+- `INVALID_DOCUMENT`：JSON 结构不是合法导图文档。
+- `READ_FAILED`：无法读取文件。
+- `WRITE_FAILED`：无法写入文件。
+- `INVALID_MOVE`：拖拽操作会生成非法树结构。
 
-## SQL Impact
+## SQL 影响
 
-No SQL, database schema, index, upgrade script, or initialization script changes are required.
+本功能不涉及 SQL、数据库表结构、索引、升级脚本或初始化脚本变更。
