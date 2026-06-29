@@ -7,3 +7,4 @@
 - 新增固定右向树编辑、键盘创建节点、删除、拖拽移动、折叠/展开、备注、视图状态，以及 JSON 文件打开/保存接入。
 - 新增树操作和文档校验的聚焦单元测试。
 - 已验证 `npm test`、`npm run build`、`npm audit` 和 `npm run tauri -- build`；Windows MSI 与 NSIS 安装包生成成功。
+- 修复 release 版保存/打开 JSON 文件所需的 Tauri fs 读写权限，确保文件对话框授权路径可被 `readTextFile` 和 `writeTextFile` 使用。

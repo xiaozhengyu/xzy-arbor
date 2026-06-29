@@ -24,7 +24,7 @@ Tauri build outputs are generated under `src-tauri/target/release/bundle/` and a
 
 ## Architecture
 
-XZY Arbor is a Tauri 2 + React 19 + TypeScript desktop app for fixed right-oriented mind maps. The product scope is documented in `docs/spec/lightweight-mindmap/` and the original design is in `docs/superpowers/specs/2026-06-29-lightweight-mindmap-design.md`.
+XZY Arbor is a Tauri 2 + React 19 + TypeScript desktop app for fixed right-oriented mind maps. The product scope is documented in `docs/spec/202606291633-mvp-version/` and the original design is in `docs/superpowers/specs/2026-06-29-lightweight-mindmap-design.md`.
 
 The frontend owns the mind map editing model and UI:
 
@@ -45,7 +45,8 @@ Mind map files are JSON documents with `version`, `root`, and `viewport`. Each n
 
 ## Project Workflow Notes
 
-- Before behavior changes, check `docs/spec/lightweight-mindmap/01_requirement.md`, `02_interface.md`, and `03_implementation.md` for scope and constraints.
+- Before behavior changes, check the relevant `docs/spec/<feature>/01_requirement.md`, `02_interface.md`, and `03_implementation.md` for scope and constraints.
+- Spec feature directories under `docs/spec/` must use the format `YYYYMMDDHHmm-kebab-case-topic`, for example `202606291633-mvp-version`.
 - When code behavior changes, update `docs/decisions/AI_CHANGELOG.md` with the implementation summary and validation performed.
 - This project has no SQL/database layer; no migration or init scripts are currently expected.
 - There is no lint script configured in `package.json`; use `npm run build`, `npm test`, and `npm audit` for current validation.
