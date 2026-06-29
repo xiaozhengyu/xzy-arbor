@@ -6,6 +6,7 @@ dist/
 build/
 target/
 src-tauri/target/
+src-tauri/gen/
 
 # Local environment
 .env

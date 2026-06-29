@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Default desktop permissions for local mind map files",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default"
+  ]
+}
