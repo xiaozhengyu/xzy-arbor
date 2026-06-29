@@ -20,12 +20,14 @@ import {
   updateNodeNote,
   updateNodeText,
   updateViewport,
+  type DropPosition,
 } from './lib/tree';
 import { MindMapDocument, MindMapDocumentError, MindMapNode, Viewport } from './lib/types';
 
 const zoomStep = 0.1;
 const minZoom = 0.35;
 const maxZoom = 2;
+const dragThreshold = 6;
 
 export function App() {
   const [mindMap, setMindMap] = useState<MindMapDocument>(() => createDefaultDocument());
@@ -36,11 +38,14 @@ export function App() {
   const [dirty, setDirty] = useState(false);
   const [noteOpen, setNoteOpen] = useState(true);
   const [status, setStatus] = useState('就绪');
-  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   const dirtyRef = useRef(dirty);
   const mindMapRef = useRef(mindMap);
   const filePathRef = useRef(filePath);
   const panningRef = useRef<{ startX: number; startY: number; viewport: Viewport } | null>(null);
+  const dragRef = useRef<DragSession | null>(null);
+  const dropPreviewRef = useRef<DropPreview | null>(null);
+  const suppressClickRef = useRef(false);
 
   const layout = useMemo(() => computeRightTreeLayout(mindMap.root), [mindMap.root]);
   const selectedNode = findNode(mindMap.root, selectedId) ?? mindMap.root;
@@ -175,6 +180,48 @@ export function App() {
     setEditingText('');
   }
 
+  function setDropPreviewState(nextPreview: DropPreview | null) {
+    const currentPreview = dropPreviewRef.current;
+    if (
+      currentPreview?.targetId === nextPreview?.targetId &&
+      currentPreview?.position === nextPreview?.position
+    ) {
+      return;
+    }
+
+    dropPreviewRef.current = nextPreview;
+    setDropPreview(nextPreview);
+  }
+
+  function clearDragState() {
+    dragRef.current = null;
+    setDropPreviewState(null);
+  }
+
+  function getDropPreviewFromPoint(clientX: number, clientY: number, sourceId: string): DropPreview | null {
+    const element = document.elementFromPoint(clientX, clientY);
+    if (!(element instanceof HTMLElement)) {
+      return null;
+    }
+
+    const nodeElement = element.closest<HTMLElement>('.mindmap-node');
+    const targetId = nodeElement?.dataset.nodeId;
+    if (!targetId || targetId === sourceId) {
+      return null;
+    }
+
+    const sourceNode = findNode(mindMapRef.current.root, sourceId);
+    if (sourceNode && findNode(sourceNode, targetId)) {
+      return null;
+    }
+
+    const rect = nodeElement.getBoundingClientRect();
+    return {
+      targetId,
+      position: targetId === ROOT_ID ? 'inside' : resolveDropPosition(clientY, rect),
+    };
+  }
+
   async function confirmReplaceDocument(): Promise<boolean> {
     if (!dirtyRef.current) {
       return true;
@@ -264,27 +311,94 @@ export function App() {
     updateDocument(updateNodeNote(mindMap, selectedNode.id, note));
   }
 
-  function handleDrop(event: React.DragEvent<HTMLDivElement>, targetId: string) {
-    event.preventDefault();
+  function handleNodePointerDown(event: React.PointerEvent<HTMLDivElement>, nodeId: string) {
     event.stopPropagation();
-
-    const sourceId = dragSourceId;
-    setDragSourceId(null);
-    if (!sourceId) {
+    if (event.button !== 0 || nodeId === ROOT_ID) {
       return;
     }
 
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientY - rect.top) / rect.height;
-    const position = ratio < 0.33 ? 'before' : ratio > 0.66 ? 'after' : 'inside';
+    dragRef.current = {
+      sourceId: nodeId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleNodePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.stopPropagation();
+    if (!drag.started) {
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (distance < dragThreshold) {
+        return;
+      }
+
+      drag.started = true;
+      suppressClickRef.current = true;
+    }
+
+    setDropPreviewState(getDropPreviewFromPoint(event.clientX, event.clientY, drag.sourceId));
+  }
+
+  function handleNodePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    const preview = drag.started
+      ? getDropPreviewFromPoint(event.clientX, event.clientY, drag.sourceId) ?? dropPreviewRef.current
+      : null;
+    const sourceId = drag.sourceId;
+    const started = drag.started;
+    clearDragState();
+
+    if (!started || !preview) {
+      return;
+    }
 
     try {
-      updateDocument(moveNode(mindMap, sourceId, targetId, position));
+      updateDocument(moveNode(mindMapRef.current, sourceId, preview.targetId, preview.position));
       setSelectedId(sourceId);
-      updateStatus(position === 'inside' ? '已移动为子节点' : '已调整节点顺序');
+      updateStatus(preview.position === 'inside' ? '已移动为子节点' : '已调整节点顺序');
     } catch (error) {
       updateStatus(toUserMessage(error));
     }
+  }
+
+  function handleNodePointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    clearDragState();
+  }
+
+  function handleNodeClick(event: React.MouseEvent<HTMLDivElement>, nodeId: string) {
+    event.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+
+    setSelectedId(nodeId);
   }
 
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -317,7 +431,9 @@ export function App() {
 
   function handleCanvasPointerUp(event: React.PointerEvent<HTMLDivElement>) {
     panningRef.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   }
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
@@ -389,32 +505,27 @@ export function App() {
               const node = layoutNode.node;
               const selected = selectedNode.id === node.id;
               const editing = editingNodeId === node.id;
+              const previewPosition = dropPreview?.targetId === node.id ? dropPreview.position : null;
               return (
                 <div
                   key={node.id}
-                  className={`mindmap-node${selected ? ' selected' : ''}${node.id === ROOT_ID ? ' root' : ''}`}
+                  className={`mindmap-node${selected ? ' selected' : ''}${node.id === ROOT_ID ? ' root' : ''}${previewPosition ? ` drop-${previewPosition}` : ''}`}
+                  data-node-id={node.id}
                   style={{
                     left: layoutNode.x,
                     top: layoutNode.y,
                     width: layoutNode.width,
                     height: layoutNode.height,
                   }}
-                  draggable={node.id !== ROOT_ID}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelectedId(node.id);
-                  }}
+                  onClick={(event) => handleNodeClick(event, node.id)}
                   onDoubleClick={(event) => {
                     event.stopPropagation();
                     startEditing(node);
                   }}
-                  onDragStart={(event) => {
-                    setDragSourceId(node.id);
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setData('text/plain', node.id);
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => handleDrop(event, node.id)}
+                  onPointerDown={(event) => handleNodePointerDown(event, node.id)}
+                  onPointerMove={handleNodePointerMove}
+                  onPointerUp={handleNodePointerUp}
+                  onPointerCancel={handleNodePointerCancel}
                 >
                   {node.children.length > 0 && (
                     <button
@@ -478,6 +589,30 @@ export function App() {
       </footer>
     </div>
   );
+}
+
+type DropPreview = {
+  targetId: string;
+  position: DropPosition;
+};
+
+type DragSession = {
+  sourceId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  started: boolean;
+};
+
+function resolveDropPosition(clientY: number, rect: DOMRect): DropPosition {
+  const ratio = (clientY - rect.top) / rect.height;
+  if (ratio < 0.33) {
+    return 'before';
+  }
+  if (ratio > 0.66) {
+    return 'after';
+  }
+  return 'inside';
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

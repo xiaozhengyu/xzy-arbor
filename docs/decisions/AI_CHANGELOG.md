@@ -8,3 +8,4 @@
 - 新增树操作和文档校验的聚焦单元测试。
 - 已验证 `npm test`、`npm run build`、`npm audit` 和 `npm run tauri -- build`；Windows MSI 与 NSIS 安装包生成成功。
 - 修复 release 版保存/打开 JSON 文件所需的 Tauri fs 读写权限，确保文件对话框授权路径可被 `readTextFile` 和 `writeTextFile` 使用。
+- 将节点拖拽从原生 HTML5 drag/drop 改为指针驱动交互，补充目标高亮，提升 Tauri/WebView 中调整层级和顺序的稳定性。
