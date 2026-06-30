@@ -1,6 +1,14 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createHistory,
+  recordHistory,
+  redoHistory,
+  replaceHistoryPresent,
+  resetHistory,
+  undoHistory,
+} from './lib/history';
+import {
   isTauriRuntime,
   openMindMapFile,
   saveMindMapFile,
@@ -30,7 +38,7 @@ const maxZoom = 2;
 const dragThreshold = 6;
 
 export function App() {
-  const [mindMap, setMindMap] = useState<MindMapDocument>(() => createDefaultDocument());
+  const [history, setHistory] = useState(() => createHistory(createDefaultDocument()));
   const [selectedId, setSelectedId] = useState(ROOT_ID);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
@@ -39,17 +47,21 @@ export function App() {
   const [noteOpen, setNoteOpen] = useState(true);
   const [status, setStatus] = useState('就绪');
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingDocumentAction | null>(null);
   const dirtyRef = useRef(dirty);
-  const mindMapRef = useRef(mindMap);
+  const mindMapRef = useRef(history.present);
   const filePathRef = useRef(filePath);
+  const closeUnlistenRef = useRef<(() => void) | null>(null);
   const panningRef = useRef<{ startX: number; startY: number; viewport: Viewport } | null>(null);
   const dragRef = useRef<DragSession | null>(null);
   const dropPreviewRef = useRef<DropPreview | null>(null);
   const suppressClickRef = useRef(false);
 
+  const mindMap = history.present;
   const layout = useMemo(() => computeRightTreeLayout(mindMap.root), [mindMap.root]);
   const selectedNode = findNode(mindMap.root, selectedId) ?? mindMap.root;
-  const title = `${filePath ? filePath.split(/[\\/]/).pop() : '未命名导图'}${dirty ? ' *' : ''}`;
+  const displayTitle = `${dirty ? '*' : ''}${getFileName(filePath)}`;
+  const windowTitle = `XZY Arbor - ${displayTitle}`;
 
   useEffect(() => {
     dirtyRef.current = dirty;
@@ -64,7 +76,16 @@ export function App() {
   }, [filePath]);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (isTauriRuntime()) {
+      void getCurrentWindow().setTitle(windowTitle);
+      return;
+    }
+
+    document.title = windowTitle;
+  }, [windowTitle]);
+
+  useEffect(() => {
+    if (!isTauriRuntime() || !dirty) {
       return;
     }
 
@@ -72,42 +93,51 @@ export function App() {
     let unlisten: (() => void) | undefined;
 
     getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (!dirtyRef.current) {
-          return;
-        }
-
+      .onCloseRequested((event) => {
         event.preventDefault();
-        const shouldClose = window.confirm('当前导图有未保存更改。放弃更改并关闭应用？');
-        if (shouldClose) {
-          dirtyRef.current = false;
-          await getCurrentWindow().close();
-        }
+        setPendingAction('close');
       })
       .then((handler) => {
         if (disposed) {
           handler();
         } else {
           unlisten = handler;
+          closeUnlistenRef.current = handler;
         }
       });
 
     return () => {
       disposed = true;
       unlisten?.();
+      if (closeUnlistenRef.current === unlisten) {
+        closeUnlistenRef.current = null;
+      }
     };
-  }, []);
+  }, [dirty]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      const target = event.target as HTMLElement | null;
+      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+      const usesModifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (usesModifier && key === 's') {
         event.preventDefault();
         void handleSave();
         return;
       }
 
-      const target = event.target as HTMLElement | null;
-      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+      if (usesModifier && !isTextInput && (key === 'z' || key === 'y')) {
+        event.preventDefault();
+        if (key === 'y' || event.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+
       if (editingNodeId || isTextInput) {
         return;
       }
@@ -146,13 +176,15 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingNodeId, mindMap, selectedId, selectedNode]);
+  }, [editingNodeId, history, mindMap, selectedId, selectedNode]);
 
-  function updateDocument(nextDocument: MindMapDocument, markDirty = true) {
-    setMindMap(nextDocument);
-    if (markDirty) {
-      setDirty(true);
-    }
+  function updateDocument(nextDocument: MindMapDocument, record = true) {
+    setHistory((currentHistory) => (
+      record
+        ? recordHistory(currentHistory, nextDocument)
+        : replaceHistoryPresent(currentHistory, nextDocument)
+    ));
+    setDirty(true);
   }
 
   function updateStatus(message: string) {
@@ -178,6 +210,42 @@ export function App() {
   function cancelEditing() {
     setEditingNodeId(null);
     setEditingText('');
+  }
+
+  function handleUndo() {
+    setHistory((currentHistory) => {
+      const nextHistory = undoHistory(currentHistory);
+      if (nextHistory === currentHistory) {
+        return currentHistory;
+      }
+
+      setEditingNodeId(null);
+      setEditingText('');
+      setDirty(true);
+      setSelectedId((currentSelectedId) => (
+        findNode(nextHistory.present.root, currentSelectedId) ? currentSelectedId : ROOT_ID
+      ));
+      updateStatus('已撤销上一步操作');
+      return nextHistory;
+    });
+  }
+
+  function handleRedo() {
+    setHistory((currentHistory) => {
+      const nextHistory = redoHistory(currentHistory);
+      if (nextHistory === currentHistory) {
+        return currentHistory;
+      }
+
+      setEditingNodeId(null);
+      setEditingText('');
+      setDirty(true);
+      setSelectedId((currentSelectedId) => (
+        findNode(nextHistory.present.root, currentSelectedId) ? currentSelectedId : ROOT_ID
+      ));
+      updateStatus('已重做上一步操作');
+      return nextHistory;
+    });
   }
 
   function setDropPreviewState(nextPreview: DropPreview | null) {
@@ -222,59 +290,97 @@ export function App() {
     };
   }
 
-  async function confirmReplaceDocument(): Promise<boolean> {
-    if (!dirtyRef.current) {
-      return true;
-    }
-
-    const action = window.prompt('当前导图有未保存更改。输入 save 保存、discard 放弃、cancel 取消。', 'cancel');
-    if (action === 'save') {
-      return handleSave();
-    }
-
-    return action === 'discard';
-  }
-
-  async function handleNew() {
-    if (!(await confirmReplaceDocument())) {
+  function requestDocumentAction(action: PendingDocumentAction) {
+    if (dirtyRef.current) {
+      setPendingAction(action);
       return;
     }
 
-    const nextDocument = createDefaultDocument();
-    setMindMap(nextDocument);
-    setSelectedId(ROOT_ID);
-    setEditingNodeId(null);
-    setFilePath(null);
-    setDirty(false);
-    updateStatus('已创建新导图');
+    void runDocumentAction(action);
   }
 
-  async function handleOpen() {
-    if (!(await confirmReplaceDocument())) {
+  async function handleUnsavedDecision(decision: UnsavedDecision) {
+    const action = pendingAction;
+    if (!action) {
       return;
     }
 
-    try {
-      const opened = await openMindMapFile();
-      if (!opened) {
+    if (decision === 'cancel') {
+      setPendingAction(null);
+      return;
+    }
+
+    if (decision === 'save') {
+      const saved = await handleSave();
+      setPendingAction(null);
+      if (!saved) {
         return;
       }
-
-      setMindMap(opened.document);
-      setSelectedId(opened.document.root.id);
-      setEditingNodeId(null);
-      setFilePath(opened.path);
-      setDirty(false);
-      updateStatus('已打开导图');
-    } catch (error) {
-      updateStatus(toUserMessage(error));
+      await runDocumentAction(action);
+      return;
     }
+
+    setPendingAction(null);
+    await runDocumentAction(action);
+  }
+
+  async function runDocumentAction(action: PendingDocumentAction) {
+    if (action === 'new') {
+      const nextDocument = createDefaultDocument();
+      setHistory(resetHistory(nextDocument));
+      setSelectedId(ROOT_ID);
+      setEditingNodeId(null);
+      setEditingText('');
+      setFilePath(null);
+      setDirty(false);
+      updateStatus('已创建新导图');
+      return;
+    }
+
+    if (action === 'open') {
+      try {
+        const opened = await openMindMapFile();
+        if (!opened) {
+          return;
+        }
+
+        setHistory(resetHistory(opened.document));
+        setSelectedId(opened.document.root.id);
+        setEditingNodeId(null);
+        setEditingText('');
+        setFilePath(opened.path);
+        setDirty(false);
+        updateStatus('已打开导图');
+      } catch (error) {
+        updateStatus(toOpenUserMessage(error));
+      }
+      return;
+    }
+
+    if (!isTauriRuntime()) {
+      window.close();
+      return;
+    }
+
+    closeUnlistenRef.current?.();
+    closeUnlistenRef.current = null;
+    dirtyRef.current = false;
+    await getCurrentWindow().destroy();
+  }
+
+  function handleNew() {
+    requestDocumentAction('new');
+  }
+
+  function handleOpen() {
+    requestDocumentAction('open');
   }
 
   async function handleSave(): Promise<boolean> {
     try {
       const savedPath = await saveMindMapFile(mindMapRef.current, filePathRef.current);
       if (!savedPath) {
+        updateStatus('保存已取消，当前导图仍有未保存更改');
         return false;
       }
 
@@ -283,14 +389,14 @@ export function App() {
       updateStatus('已保存导图');
       return true;
     } catch (error) {
-      updateStatus(toUserMessage(error));
+      updateStatus(toSaveUserMessage(error));
       return false;
     }
   }
 
   async function handleSaveAs() {
     try {
-      const savedPath = await saveMindMapFileAs(mindMap);
+      const savedPath = await saveMindMapFileAs(mindMapRef.current);
       if (!savedPath) {
         return;
       }
@@ -299,7 +405,7 @@ export function App() {
       setDirty(false);
       updateStatus('已另存为导图');
     } catch (error) {
-      updateStatus(toUserMessage(error));
+      updateStatus(toSaveUserMessage(error));
     }
   }
 
@@ -426,6 +532,7 @@ export function App() {
         x: panning.viewport.x + event.clientX - panning.startX,
         y: panning.viewport.y + event.clientY - panning.startY,
       }),
+      false,
     );
   }
 
@@ -439,7 +546,7 @@ export function App() {
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
     event.preventDefault();
     const nextZoom = clamp(mindMap.viewport.zoom + (event.deltaY > 0 ? -zoomStep : zoomStep), minZoom, maxZoom);
-    updateDocument(updateViewport(mindMap, { ...mindMap.viewport, zoom: nextZoom }));
+    updateDocument(updateViewport(mindMap, { ...mindMap.viewport, zoom: nextZoom }), false);
   }
 
   function handleZoom(delta: number) {
@@ -448,6 +555,7 @@ export function App() {
         ...mindMap.viewport,
         zoom: clamp(mindMap.viewport.zoom + delta, minZoom, maxZoom),
       }),
+      false,
     );
   }
 
@@ -456,9 +564,11 @@ export function App() {
       <header className="toolbar">
         <div>
           <h1>XZY Arbor</h1>
-          <p>{title}</p>
+          <p>{displayTitle}</p>
         </div>
         <div className="toolbar-actions">
+          <button type="button" onClick={handleUndo} disabled={history.past.length === 0}>撤销</button>
+          <button type="button" onClick={handleRedo} disabled={history.future.length === 0}>重做</button>
           <button type="button" onClick={handleNew}>新建</button>
           <button type="button" onClick={handleOpen}>打开</button>
           <button type="button" onClick={() => void handleSave()}>保存</button>
@@ -587,6 +697,27 @@ export function App() {
         <span>{status}</span>
         <span>{dirty ? '有未保存更改' : '所有更改已保存'}</span>
       </footer>
+
+      {pendingAction && (
+        <div className="dialog-backdrop">
+          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="unsaved-dialog-title">
+            <div>
+              <span className="dialog-kicker">未保存更改</span>
+              <h2 id="unsaved-dialog-title">当前导图有未保存更改</h2>
+              <p>继续操作前，请选择保存当前导图、放弃更改或取消操作。</p>
+            </div>
+            <div className="dialog-actions">
+              <button type="button" onClick={() => void handleUnsavedDecision('save')}>保存</button>
+              <button type="button" className="secondary-button" onClick={() => void handleUnsavedDecision('discard')}>
+                放弃更改
+              </button>
+              <button type="button" className="ghost-button" onClick={() => void handleUnsavedDecision('cancel')}>
+                取消
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -604,6 +735,10 @@ type DragSession = {
   started: boolean;
 };
 
+type PendingDocumentAction = 'new' | 'open' | 'close';
+
+type UnsavedDecision = 'save' | 'discard' | 'cancel';
+
 function resolveDropPosition(clientY: number, rect: DOMRect): DropPosition {
   const ratio = (clientY - rect.top) / rect.height;
   if (ratio < 0.33) {
@@ -617,6 +752,41 @@ function resolveDropPosition(clientY: number, rect: DOMRect): DropPosition {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+function getFileName(path: string | null): string {
+  return path ? path.split(/[\\/]/).pop() || path : '未命名导图';
+}
+
+function toOpenUserMessage(error: unknown): string {
+  if (error instanceof MindMapDocumentError) {
+    if (error.code === 'INVALID_JSON') {
+      return '所选文件不是有效的 JSON，当前导图未被替换。';
+    }
+    if (error.code === 'UNSUPPORTED_VERSION') {
+      return '所选导图版本暂不支持，当前导图未被替换。';
+    }
+    if (error.code === 'INVALID_DOCUMENT') {
+      return '所选文件不是合法的 XZY Arbor 导图，当前导图未被替换。';
+    }
+    if (error.code === 'READ_FAILED') {
+      return '读取文件失败，当前导图未被替换。';
+    }
+  }
+
+  if (error instanceof Error) {
+    return `${error.message}，当前导图未被替换。`;
+  }
+
+  return '打开失败，当前导图未被替换。';
+}
+
+function toSaveUserMessage(error: unknown): string {
+  if (error instanceof MindMapDocumentError && error.code === 'WRITE_FAILED') {
+    return '保存失败，当前导图仍有未保存更改。';
+  }
+
+  return '保存失败，当前导图仍有未保存更改。';
 }
 
 function toUserMessage(error: unknown): string {
